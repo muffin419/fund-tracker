@@ -313,10 +313,65 @@ catalysts.sort(key=lambda x: x['date'])
 data['catalysts'] = catalysts[:10]  # 最多保留10个
 print(f"  保留 {len(data['catalysts'])} 个催化剂事件")
 
-# ============ 8. 更新时间戳 ============
+# ============ 8. 从HTML读取持仓基金并抓取最新净值 ============
+print("\n--- 从HTML读取持仓基金列表 ---")
+
+# 从HTML的 funds 数组中提取所有基金代码和名称
+# 匹配格式: {id:1,name:"...",code:"006479",...}
+fund_matches = re.findall(r'\{id:\d+,name:"([^"]+)",code:"(\d{6})"', html)
+
+if not fund_matches:
+    print("  警告: 未找到持仓基金，跳过净值抓取")
+    my_fund_data = []
+else:
+    print(f"  发现 {len(fund_matches)} 只持仓基金")
+    
+    my_fund_data = []
+    
+    for name, code in fund_matches:
+        try:
+            time.sleep(0.2)
+            df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+            if df is None or len(df) < 2:
+                my_fund_data.append({
+                    'code': code, 'name': name,
+                    'latest_nav': None, 'prev_nav': None,
+                    'daily_change_pct': 0
+                })
+                continue
+            
+            latest_nav = safe_float(df.iloc[-1]['单位净值'])
+            prev_nav = safe_float(df.iloc[-2]['单位净值'])
+            
+            if prev_nav > 0:
+                daily_change_pct = round((latest_nav - prev_nav) / prev_nav * 100, 2)
+            else:
+                daily_change_pct = 0
+            
+            my_fund_data.append({
+                'code': code, 'name': name,
+                'latest_nav': round(latest_nav, 4),
+                'prev_nav': round(prev_nav, 4),
+                'daily_change_pct': daily_change_pct
+            })
+            print(f"  {name[:12]}: 净值{latest_nav:.4f} ({daily_change_pct:+.2f}%)")
+            
+        except Exception as e:
+            print(f"  {name[:12]}: 获取失败 - {e}")
+            my_fund_data.append({
+                'code': code, 'name': name,
+                'latest_nav': None, 'prev_nav': None,
+                'daily_change_pct': 0
+            })
+
+# 保存到MARKET_DATA
+data['myFundsNav'] = my_fund_data
+data['navUpdateTime'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+# ============ 9. 更新时间戳 ============
 data['updateTime'] = datetime.now().strftime('%Y-%m-%d %H:%M')
 
-# ============ 9. 写回HTML ============
+# ============ 10. 写回HTML ============
 print("\n--- 写回HTML文件 ---")
 
 # 序列化JSON（确保中文不被转义）
@@ -333,3 +388,4 @@ print(f"更新时间: {data['updateTime']}")
 print(f"方向预测: {len(data['predictions'])} 个方向")
 print(f"推荐基金: {len(data['recommendations'])} 只")
 print(f"催化剂事件: {len(data['catalysts'])} 个")
+print(f"持仓净值: {len([f for f in my_fund_data if f['latest_nav']])} 只基金已更新")
