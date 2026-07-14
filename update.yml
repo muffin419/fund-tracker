@@ -1,0 +1,38 @@
+name: Daily Fund Data Update
+
+on:
+  # 每天UTC 00:00（北京时间早8点）自动运行
+  schedule:
+    - cron: '0 0 * * *'
+  # 支持手动触发（在Actions页面点Run workflow）
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          pip install akshare -q
+          
+      - name: Update fund data
+        run: python update_script.py
+        
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add index.html
+          git diff --cached --quiet || git commit -m "auto: update fund data $(date +%Y-%m-%d)"
+          git push
